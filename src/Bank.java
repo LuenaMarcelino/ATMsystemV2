@@ -9,8 +9,12 @@ public class Bank {
     private Map<String, UserData> users;
     private Gson gson = new Gson();
     private String dataFile = "users.json";
+    private ATMStatus atmStatus;
+    private TransactionHistory transactionHistory;
 
-    public Bank() {
+    public Bank(ATMStatus atmStatus) {
+        this.atmStatus = atmStatus;
+        this.transactionHistory = new TransactionHistory();
         loadUsers();
     }
 
@@ -45,11 +49,27 @@ public class Bank {
 
     public boolean withdraw(String username, double amount) {
         UserData user = users.get(username);
-        if (user.getBalance() >= amount && amount > 0) {
+
+        // Check if user has enough balance
+        if (amount <= 0 || user.getBalance() < amount) {
+            System.out.println("❌ Insufficient balance.");
+            return false;
+        }
+
+        // Check if ATM has enough cash
+        if (!atmStatus.canDispense(amount)) {
+            System.out.println("❌ ATM cannot dispense this amount. Either out of cash or cannot make exact change.");
+            return false;
+        }
+
+        // Dispense cash
+        if (atmStatus.dispenseCash(amount)) {
             user.setBalance(user.getBalance() - amount);
             saveUsers();
+            transactionHistory.addTransaction(username, "Withdrawal", amount);
             return true;
         }
+
         return false;
     }
 
@@ -57,15 +77,28 @@ public class Bank {
         UserData user = users.get(username);
         user.setBalance(user.getBalance() + amount);
         saveUsers();
+        transactionHistory.addTransaction(username, "Deposit", amount);
     }
 
     public boolean transfer(String fromUser, String toUser, double amount) {
-        if (!users.containsKey(toUser)) return false;
-        if (withdraw(fromUser, amount)) {
-            deposit(toUser, amount);
-            return true;
+        if (!users.containsKey(toUser)) {
+            System.out.println("❌ Recipient not found.");
+            return false;
         }
-        return false;
+
+        UserData sender = users.get(fromUser);
+
+        if (amount <= 0 || sender.getBalance() < amount) {
+            System.out.println("❌ Insufficient balance.");
+            return false;
+        }
+
+        // Perform transfer
+        sender.setBalance(sender.getBalance() - amount);
+        users.get(toUser).setBalance(users.get(toUser).getBalance() + amount);
+        saveUsers();
+        transactionHistory.addTransaction(fromUser, "Transfer to " + toUser, amount);
+        return true;
     }
 
     public int getNumberOfUsers() {
@@ -74,5 +107,9 @@ public class Bank {
 
     public double getTotalMoney() {
         return users.values().stream().mapToDouble(UserData::getBalance).sum();
+    }
+
+    public TransactionHistory getTransactionHistory() {
+        return transactionHistory;
     }
 }
